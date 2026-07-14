@@ -5,21 +5,10 @@ cd "${ROOT}"
 export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
 
 # Paper: Qwen3-Embedding-4B (frozen). Do not fall back to generative Qwen2.5.
-MODEL="${EMBED_MODEL:-}"
-if [[ -z "${MODEL}" ]]; then
-  for c in \
-    "${ROOT}/data/models/Qwen3-Embedding-4B" \
-    /home/sheng/data/models/Qwen3-Embedding-4B \
-    /home/sheng/proj/mor-reproduce/data/models/Qwen3-Embedding-4B
-  do
-    if [[ -f "${c}/config.json" && -f "${c}/model.safetensors.index.json" ]]; then
-      MODEL="$c"
-      break
-    fi
-  done
-fi
-if [[ -z "${MODEL}" ]]; then
-  echo "ERROR: Qwen3-Embedding-4B not found. Upload weights then rerun." >&2
+# Override with EMBED_MODEL=/path/to/weights if needed.
+MODEL="${EMBED_MODEL:-${ROOT}/data/models/Qwen3-Embedding-4B}"
+if [[ ! -f "${MODEL}/config.json" || ! -f "${MODEL}/model.safetensors.index.json" ]]; then
+  echo "ERROR: Qwen3-Embedding-4B not found at ${MODEL}. Place weights under data/models/ or set EMBED_MODEL." >&2
   exit 1
 fi
 

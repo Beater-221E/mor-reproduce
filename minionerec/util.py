@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 DATASETS = {
     "Industrial_and_Scientific": {
         # Amazon Reviews'23 filenames (https://amazon-reviews-2023.github.io/)
@@ -26,6 +28,25 @@ DATASETS = {
 SID_LAYER_PREFIXES = ("a", "b", "c")
 CODEBOOK_SIZE = 256
 NUM_CODEBOOK_LAYERS = 3
+
+
+def project_root(start: Path | None = None) -> Path:
+    """Resolve repo root from a path under the project (or cwd)."""
+    p = (start or Path.cwd()).resolve()
+    if p.is_file():
+        p = p.parent
+    for cand in (p, *p.parents):
+        if (cand / "minionerec").is_dir() and (cand / "configs").is_dir():
+            return cand
+    return Path.cwd().resolve()
+
+
+def resolve_path(path: str | Path, base: Path | None = None) -> Path:
+    """Resolve relative paths against project root; leave absolute paths unchanged."""
+    p = Path(path).expanduser()
+    if p.is_absolute():
+        return p
+    return (base or project_root()) / p
 
 
 def sid_token(layer: int, code: int) -> str:

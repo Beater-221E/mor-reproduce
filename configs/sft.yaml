@@ -26,10 +26,11 @@ pack_sequences: true   # ~3x fewer steps/epoch (mean seq ~134 -> pack into 512)
 log_every_micro: 0     # 0 = off (avoid 4-rank spam)
 logging_steps: 1     # print loss every optimizer step (step is already ~2min)
 
+# Paths are relative to project root (or absolute if you prefer).
 model_map:
-  "0.5B": /home/sheng/data/models/Qwen2.5-0.5B
-  "1.5B": /home/sheng/data/models/Qwen2.5-1.5B
-  "3B": /home/sheng/data/models/Qwen2.5-3B
+  "0.5B": data/models/Qwen2.5-0.5B
+  "1.5B": data/models/Qwen2.5-1.5B
+  "3B": data/models/Qwen2.5-3B
 
-# local model root (also symlinked at data/models)
-model_root: /home/sheng/data/models
+# local model root under the project tree
+model_root: data/models

@@ -19,6 +19,7 @@ from transformers.utils import logging as hf_logging
 
 from minionerec.dataset import SFTData, collate
 from minionerec.model import load_model, load_tokenizer, load_tokenizer_from_dir, save_tok
+from minionerec.util import project_root, resolve_path
 
 
 def quiet_logs() -> None:
@@ -206,7 +207,8 @@ def main():
         cfg = yaml.safe_load(f)
 
     set_seed(cfg.get("seed", 42))
-    model_name = cfg["model_map"][args.model_size]
+    root = project_root(Path(args.config))
+    model_name = str(resolve_path(cfg["model_map"][args.model_size], base=root))
     n_gpu = int(os.environ.get("WORLD_SIZE", max(1, torch.cuda.device_count())))
     micro, accum = resolve_micro_batch(
         args.model_size, cfg, n_gpu=n_gpu, global_batch=int(cfg["global_batch_size"])

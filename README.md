@@ -19,7 +19,7 @@ checkpoints/ experiments/
 
 ```bash
 conda activate mor
-cd /home/sheng/proj/mor-reproduce
+cd /path/to/mor-reproduce   # project root
 pip install -e .
 export PYTHONPATH=$PWD:$PYTHONPATH
 export NCCL_IB_DISABLE=1
@@ -36,4 +36,4 @@ bash scripts/eval.sh Industrial_and_Scientific 1.5B rl
 ```
 
 Embedding：`data/models/Qwen3-Embedding-4B`（论文同款，last-token pool + L2 norm）。  
-Backbone：`/home/sheng/data/models/Qwen2.5-{0.5B,1.5B,3B}`（见 `configs/sft.yaml`）。
+Backbone：`data/models/Qwen2.5-{0.5B,1.5B,3B}`（见 `configs/sft.yaml`；可把权重放到该目录或做软链）。
