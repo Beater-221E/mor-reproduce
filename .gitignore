@@ -8,11 +8,17 @@ dist/
 build/
 .venv/
 venv/
-data/raw/
-data/processed/
+
+# data & weights — never upload
+data/
 checkpoints/
 *.pt
 *.npy
+*.safetensors
+*.bin
+*.gguf
+*.onnx
+
 wandb/
 .DS_Store
 experiments/*.json
@@ -20,3 +26,5 @@ experiments/*.png
 !experiments/NOTES.md
 HF_HOME/
 .cache/
+tmux_*.log
+*.log

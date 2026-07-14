@@ -19,7 +19,7 @@ checkpoints/ experiments/
 
 ```bash
 conda activate mor
-cd /home/sheng/proj/minionerec
+cd /home/sheng/proj/mor-reproduce
 pip install -e .
 export PYTHONPATH=$PWD:$PYTHONPATH
 export NCCL_IB_DISABLE=1

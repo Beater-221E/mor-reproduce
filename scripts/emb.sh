@@ -10,7 +10,7 @@ if [[ -z "${MODEL}" ]]; then
   for c in \
     "${ROOT}/data/models/Qwen3-Embedding-4B" \
     /home/sheng/data/models/Qwen3-Embedding-4B \
-    /home/sheng/proj/minionerec/data/models/Qwen3-Embedding-4B
+    /home/sheng/proj/mor-reproduce/data/models/Qwen3-Embedding-4B
   do
     if [[ -f "${c}/config.json" && -f "${c}/model.safetensors.index.json" ]]; then
       MODEL="$c"
