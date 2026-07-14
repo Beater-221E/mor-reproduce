@@ -1,11 +1,11 @@
 # MiniOneRec
 
-简化版从零复现（4×V100-16GB，最高 Qwen2.5-3B）。全参 SFT + 全参 RL。
+全参 SFT + 全参 RL。
 
 ## 结构
 
 ```
-minionerec/          # 代码（扁平短名）
+minionerec/         
   util.py prep.py emb.py rqvae.py tasks.py
   dataset.py decode.py reward.py model.py
   sft.py rl.py eval.py
