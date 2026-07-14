@@ -24,7 +24,7 @@ dataloader_num_workers: 2
 token_cache: true
 pack_sequences: true   # ~3x fewer steps/epoch (mean seq ~134 -> pack into 512)
 log_every_micro: 0     # 0 = off (avoid 4-rank spam)
-logging_steps: 10
+logging_steps: 1     # print loss every optimizer step (step is already ~2min)
 
 model_map:
   "0.5B": /home/sheng/data/models/Qwen2.5-0.5B

@@ -18,9 +18,16 @@ export TOKENIZERS_PARALLELISM=false
 
 DS="${1:?dataset}"
 SIZE="${2:?size}"
+# optional 3rd arg or RESUME=auto|path
+RESUME="${3:-${RESUME:-}}"
 NPROC="${NPROC:-4}"
 
-echo "[sft.sh] ds=${DS} size=${SIZE} nproc=${NPROC} NCCL_P2P_DISABLE=${NCCL_P2P_DISABLE}"
+echo "[sft.sh] ds=${DS} size=${SIZE} nproc=${NPROC} resume=${RESUME:-none} NCCL_P2P_DISABLE=${NCCL_P2P_DISABLE}"
+
+EXTRA=()
+if [[ -n "${RESUME}" ]]; then
+  EXTRA+=(--resume "${RESUME}")
+fi
 
 torchrun --nproc_per_node="${NPROC}" --master_port="${MASTER_PORT:-29501}" \
   --log_dir "${ROOT}/checkpoints/sft_${DS}_${SIZE}/torchrun_logs" \
@@ -30,4 +37,5 @@ torchrun --nproc_per_node="${NPROC}" --master_port="${MASTER_PORT:-29501}" \
   --train_file "${ROOT}/data/processed/${DS}/tasks/train.jsonl" \
   --eval_file "${ROOT}/data/processed/${DS}/tasks/valid.jsonl" \
   --output_dir "${ROOT}/checkpoints/sft_${DS}_${SIZE}" \
-  --deepspeed "${ROOT}/configs/ds_sft.json"
+  --deepspeed "${ROOT}/configs/ds_sft.json" \
+  "${EXTRA[@]}"

@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import os
+import time
 import warnings
 from functools import partial
 from pathlib import Path
@@ -17,7 +18,7 @@ from transformers import EarlyStoppingCallback, Trainer, TrainerCallback, Traini
 from transformers.utils import logging as hf_logging
 
 from minionerec.dataset import SFTData, collate
-from minionerec.model import load_model, load_tokenizer, save_tok
+from minionerec.model import load_model, load_tokenizer, load_tokenizer_from_dir, save_tok
 
 
 def quiet_logs() -> None:
@@ -79,37 +80,86 @@ def materialize_ds_config(src: str | Path, micro: int, accum: int, n_gpu: int, o
     return str(path)
 
 
-class MicroStepProgressCallback(TrainerCallback):
-    """Log inside an optimizer step so progress is visible with large grad_accum."""
+class MetricsLogCallback(TrainerCallback):
+    """Print loss / lr / timing as plain lines (survives tee; tqdm+silenced HF logs hide them)."""
 
-    def __init__(self, every: int = 8):
-        self.every = every
-        self.micro = 0
+    def __init__(self):
+        self._t_step = None
+        self._last_logs: dict = {}
 
     def on_train_begin(self, args, state, control, **kwargs):
-        self.micro = 0
-
-    def on_step_begin(self, args, state, control, **kwargs):
-        # optimizer step boundary
-        self.micro = 0
-
-    def on_substep_end(self, args, state, control, **kwargs):
-        # called after each grad-accum micro-batch (transformers>=4.36)
-        self.micro += 1
-        if state.is_world_process_zero and self.micro % self.every == 0:
+        self._t_step = time.time()
+        if state.is_world_process_zero:
             print(
-                f"[sft] opt_step={state.global_step} micro={self.micro}/{args.gradient_accumulation_steps}",
+                f"[sft] logging every {args.logging_steps} steps; "
+                f"at_step={state.global_step}/{state.max_steps}",
                 flush=True,
             )
 
+    def on_step_end(self, args, state, control, **kwargs):
+        # All ranks must agree; force log so loss is emitted after resume too.
+        control.should_log = True
+        if state.is_world_process_zero:
+            now = time.time()
+            sec = now - self._t_step if self._t_step is not None else float("nan")
+            self._t_step = now
+            remain = max(0, (state.max_steps or 0) - state.global_step)
+            eta_h = remain * sec / 3600.0 if sec == sec else float("nan")
+            extra = ""
+            if self._last_logs:
+                parts = []
+                for k in ("loss", "grad_norm", "learning_rate", "eval_loss"):
+                    if k in self._last_logs:
+                        v = self._last_logs[k]
+                        parts.append(
+                            f"{k}={float(v):.4g}" if isinstance(v, (int, float)) else f"{k}={v}"
+                        )
+                if parts:
+                    extra = " " + " ".join(parts)
+            print(
+                f"[sft] step={state.global_step}/{state.max_steps} "
+                f"epoch={float(state.epoch or 0):.4f} {sec:.1f}s/step eta≈{eta_h:.1f}h{extra}",
+                flush=True,
+            )
+        return control
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not logs:
+            return
+        # Cache for the next step line; SFTTrainer.log already prints metrics.
+        self._last_logs = {k: v for k, v in logs.items() if k != "epoch"}
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if state.is_world_process_zero and metrics:
+            bits = [f"{k}={float(v):.6g}" if isinstance(v, (int, float)) else f"{k}={v}" for k, v in metrics.items()]
+            print(f"[sft] eval step={state.global_step} " + " ".join(bits), flush=True)
+
 
 class SFTTrainer(Trainer):
-    """Trainer with optional rare micro-step logs (rank0 only)."""
+    """Trainer with forced metric prints + optional micro-step logs."""
 
     def __init__(self, *args, log_every_micro: int = 0, **kwargs):
         super().__init__(*args, **kwargs)
         self._log_every_micro = log_every_micro
         self._micro_in_step = 0
+
+    def log(self, logs: dict, start_time=None) -> None:
+        # HF may silence its own logger (we set log_level=error); always print rank0.
+        if self.is_world_process_zero() and logs:
+            bits = []
+            for k, v in logs.items():
+                if isinstance(v, (int, float)):
+                    bits.append(f"{k}={float(v):.6g}")
+                else:
+                    bits.append(f"{k}={v}")
+            print(
+                f"[sft] metrics step={self.state.global_step} "
+                f"epoch={float(self.state.epoch or 0):.4f} " + " ".join(bits),
+                flush=True,
+            )
+        if start_time is None:
+            return super().log(logs)
+        return super().log(logs, start_time)
 
     def training_step(self, model, inputs, num_items_in_batch=None):
         self._micro_in_step += 1
@@ -144,6 +194,12 @@ def main():
     parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--deepspeed", type=str, default="configs/ds_sft.json")
     parser.add_argument("--local_rank", type=int, default=-1)
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default="",
+        help='Resume path, or "auto" for latest checkpoint under output_dir',
+    )
     args = parser.parse_args()
 
     with open(args.config, encoding="utf-8") as f:
@@ -160,10 +216,14 @@ def main():
     os.environ["ACCELERATE_GRADIENT_ACCUMULATION_STEPS"] = str(accum)
 
     tokenizer, n_added = load_tokenizer(model_name)
-    # save tokenizer early so cache workers can reload from disk
+    # Prefer saved tokenizer when present (resume / consistent special tokens).
     args.output_dir.mkdir(parents=True, exist_ok=True)
     tok_dir = args.output_dir / "tokenizer"
-    save_tok(tokenizer, tok_dir)
+    if (tok_dir / "tokenizer_config.json").exists() or (tok_dir / "tokenizer.json").exists():
+        tokenizer = load_tokenizer_from_dir(tok_dir)
+        n_added = 0
+    else:
+        save_tok(tokenizer, tok_dir)
 
     # Build/load token cache BEFORE CUDA model init (avoid fork-after-CUDA).
     use_cache = bool(cfg.get("token_cache", True))
@@ -228,7 +288,7 @@ def main():
         logging_first_step=True,
         log_level="error",
         log_level_replica="error",
-        disable_tqdm=not is_main,
+        disable_tqdm=True,  # resume makes tqdm ETA wrong; use StepTimingCallback
         eval_strategy="steps",
         eval_steps=eval_steps,
         save_strategy="steps",
@@ -261,11 +321,21 @@ def main():
         data_collator=data_collator,
         log_every_micro=log_every,
     )
+    trainer.add_callback(MetricsLogCallback())
     trainer.add_callback(EarlyStoppingCallback(early_stopping_patience=int(cfg.get("early_stop_patience", 3))))
+
+    resume_ckpt = None
+    if args.resume:
+        if args.resume.lower() in {"1", "true", "auto", "yes"}:
+            resume_ckpt = True  # HF picks latest checkpoint-* under output_dir
+        else:
+            resume_ckpt = args.resume
+        if is_main:
+            print(f"[sft] resume_from_checkpoint={resume_ckpt}", flush=True)
 
     if is_main:
         print("[sft] train start", flush=True)
-    train_result = trainer.train()
+    train_result = trainer.train(resume_from_checkpoint=resume_ckpt)
     if is_main:
         print("[sft] train done", flush=True)
     trainer.save_model(str(args.output_dir / "final"))
