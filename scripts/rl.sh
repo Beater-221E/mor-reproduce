@@ -5,10 +5,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT}"
 export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
 export NCCL_IB_DISABLE=1
+export NCCL_P2P_DISABLE="${NCCL_P2P_DISABLE:-1}"
+export PYTHONUNBUFFERED=1
+export TOKENIZERS_PARALLELISM=false
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 DS="${1:?dataset}"
 SIZE="${2:?size}"
-G="${3:-16}"
+G="${3:-4}"
 NPROC="${NPROC:-4}"
 
 torchrun --nproc_per_node="${NPROC}" --master_port="${MASTER_PORT:-29502}" \

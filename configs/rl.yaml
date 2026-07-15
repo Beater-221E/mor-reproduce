@@ -1,4 +1,4 @@
-# Full-parameter GRPO defaults (4x V100-16GB)
+# Full-parameter GRPO defaults (4x V100-16GB, memory-tight)
 seed: 42
 num_train_epochs: 2
 learning_rate: 1.0e-5
@@ -7,11 +7,21 @@ beta: 0.001
 max_grad_norm: 0.3
 max_completion_length: 128
 temperature: 1.0
-num_generations: 16  # fall back to 8 only if OOM (still full-param)
+num_generations: 4  # raise toward 8/16 only if memory allows
 per_device_train_batch_size: 1
 global_batch_size: 512
 reward_type: ranking  # rule + rank
-beam_search: true
+beam_search: false  # sampling uses less peak memory than beam
 fp16: true
 gradient_checkpointing: true
 sync_ref_model: true
+# memory knobs
+# ref_device: cpu            # slowest, lowest GPU memory
+# ref_device: cuda           # fastest, may OOM on 16GB (policy+ref both resident)
+ref_device: cuda             # smoke-tested on 4x V100-16GB with G=2
+optim: paged_adamw8bit       # falls back to adamw8bit if unavailable
+prompt_cutoff: 384
+max_new_tokens_cap: 8
+logging_steps: 1
+save_steps: 100
+save_total_limit: 3
