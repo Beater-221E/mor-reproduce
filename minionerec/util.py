@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+
+
+def prepare_save_dir(path: Path) -> Path:
+    """Make ``path`` a fresh directory, removing any prior file/symlink/dir."""
+    path = Path(path)
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 DATASETS = {
     "Industrial_and_Scientific": {

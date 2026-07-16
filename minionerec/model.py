@@ -41,5 +41,9 @@ def load_model(model_name: str, tokenizer, torch_dtype=None, device_map=None):
 
 
 def save_tok(tokenizer, path: Path) -> None:
+    path = Path(path)
+    # Broken / stale symlinks make mkdir(exist_ok=True) raise FileExistsError.
+    if path.is_symlink() or path.is_file():
+        path.unlink()
     path.mkdir(parents=True, exist_ok=True)
     tokenizer.save_pretrained(path)

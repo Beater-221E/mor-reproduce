@@ -19,7 +19,7 @@ from transformers.utils import logging as hf_logging
 
 from minionerec.dataset import SFTData, collate
 from minionerec.model import load_model, load_tokenizer, load_tokenizer_from_dir, save_tok
-from minionerec.util import project_root, resolve_path
+from minionerec.util import prepare_save_dir, project_root, resolve_path
 
 
 def quiet_logs() -> None:
@@ -340,19 +340,32 @@ def main():
     train_result = trainer.train(resume_from_checkpoint=resume_ckpt)
     if is_main:
         print("[sft] train done", flush=True)
-    trainer.save_model(str(args.output_dir / "final"))
-    save_tok(tokenizer, args.output_dir / "final")
+
+    # Clear stale symlink/dir first: a leftover final -> checkpoint-N link (or a
+    # broken one after prune) makes mkdir(exist_ok=True) raise FileExistsError.
+    # With load_best_model_at_end=True this writes the best in-memory weights.
+    final_dir = args.output_dir / "final"
+    if is_main:
+        prepare_save_dir(final_dir)
+        best_ckpt = getattr(trainer.state, "best_model_checkpoint", None)
+        print(f"[sft] saving final -> {final_dir} (best_ckpt={best_ckpt})", flush=True)
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        torch.distributed.barrier()
+    trainer.save_model(str(final_dir))
+    save_tok(tokenizer, final_dir)
+    if is_main:
+        print(f"[sft] saved final model to {final_dir}", flush=True)
 
     metrics = train_result.metrics
     metrics["n_added_tokens"] = n_added
     metrics["micro_batch"] = micro
     metrics["grad_accum"] = accum
     metrics["world_size"] = n_gpu
-    with open(args.output_dir / "train_metrics.json", "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2)
-    with open(args.output_dir / "trainer_state.json", "w", encoding="utf-8") as f:
-        json.dump(trainer.state.log_history, f, indent=2)
     if is_main:
+        with open(args.output_dir / "train_metrics.json", "w", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=2)
+        with open(args.output_dir / "trainer_state.json", "w", encoding="utf-8") as f:
+            json.dump(trainer.state.log_history, f, indent=2)
         print(json.dumps(metrics, indent=2), flush=True)
 
 

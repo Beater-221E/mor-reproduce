@@ -28,6 +28,7 @@ from minionerec.dataset import RLData
 from minionerec.decode import SIDConstraint, make_trie, load_sids
 from minionerec.model import save_tok
 from minionerec.reward import hybrid, rule
+from minionerec.util import prepare_save_dir
 
 
 def group_rewards(preds, gold, reward_type: str):
@@ -145,17 +146,58 @@ def ref_completion_logprobs(
     return lp.to(device)
 
 
-def prune_checkpoints(output_dir: Path, save_total_limit: int) -> None:
-    if save_total_limit <= 0:
-        return
-    ckpts = sorted(
+def list_rl_checkpoints(output_dir: Path) -> list[Path]:
+    return sorted(
         (p for p in output_dir.glob("checkpoint-*") if p.is_dir() and p.name.split("-")[-1].isdigit()),
         key=lambda p: int(p.name.split("-")[-1]),
     )
+
+
+def prune_checkpoints(output_dir: Path, save_total_limit: int) -> None:
+    if save_total_limit <= 0:
+        return
+    ckpts = list_rl_checkpoints(output_dir)
     while len(ckpts) > save_total_limit:
         old = ckpts.pop(0)
         shutil.rmtree(old, ignore_errors=True)
         print(f"[rl] pruned old checkpoint {old.name}", flush=True)
+
+
+def find_latest_rl_checkpoint(output_dir: Path) -> Path | None:
+    latest = output_dir / "latest"
+    if latest.is_symlink():
+        target = latest.resolve()
+        if target.is_dir() and (target / "config.json").exists():
+            return target
+    if latest.is_dir() and (latest / "config.json").exists():
+        return latest
+    ckpts = [p for p in list_rl_checkpoints(output_dir) if (p / "config.json").exists()]
+    return ckpts[-1] if ckpts else None
+
+
+def resolve_resume_checkpoint(resume: str, output_dir: Path) -> Path | None:
+    """Resolve --resume value to a checkpoint path, or None for a fresh run."""
+    resume = (resume or "").strip()
+    if not resume or resume.lower() in {"0", "false", "none", "no"}:
+        return None
+    if resume.lower() in {"1", "true", "auto", "yes"}:
+        ckpt = find_latest_rl_checkpoint(output_dir)
+        if ckpt is None:
+            print(
+                f"[rl] --resume={resume} but no checkpoint under {output_dir}; "
+                "starting fresh from SFT",
+                flush=True,
+            )
+            return None
+        return ckpt
+    path = Path(resume)
+    if not path.is_absolute():
+        # allow checkpoint-100 or relative path from cwd / output_dir
+        cand = output_dir / resume
+        path = cand if cand.exists() else path
+    if not path.is_dir():
+        raise FileNotFoundError(f"Resume checkpoint not found: {resume}")
+    return path.resolve()
 
 
 def save_rl_checkpoint(
@@ -164,6 +206,7 @@ def save_rl_checkpoint(
     epoch: int,
     raw_model,
     tokenizer,
+    optim,
     sched,
     log_history: list,
     cfg: dict,
@@ -171,6 +214,8 @@ def save_rl_checkpoint(
     num_generations: int,
     world_size: int,
     accum: int,
+    micro_step: int,
+    micros_seen: int,
     ref_device_name: str,
     ref_home: torch.device,
     ref_pingpong: bool,
@@ -180,10 +225,20 @@ def save_rl_checkpoint(
     ckpt.mkdir(parents=True, exist_ok=True)
     raw_model.save_pretrained(ckpt)
     save_tok(tokenizer, ckpt)
+    torch.save(optim.state_dict(), ckpt / "optimizer.pt")
     torch.save(sched.state_dict(), ckpt / "scheduler.pt")
+    torch.save(
+        {
+            "torch": torch.get_rng_state(),
+            "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+        },
+        ckpt / "rng_state.pt",
+    )
     trainer_state = {
         "step": step,
         "epoch": epoch,
+        "micro_step": micro_step,
+        "micros_seen": micros_seen,
         "log_history": log_history,
         "num_generations": num_generations,
         "world_size": world_size,
@@ -205,6 +260,12 @@ def save_rl_checkpoint(
     return ckpt
 
 
+def rewrite_metrics_jsonl(path: Path, log_history: list) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        for entry in log_history:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
 def append_metrics_jsonl(path: Path, entry: dict) -> None:
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -220,6 +281,12 @@ def main():
     parser.add_argument("--num_generations", type=int, default=None)
     parser.add_argument("--max_samples", type=int, default=-1)
     parser.add_argument("--local_rank", type=int, default=-1)
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default="",
+        help='Resume path, or "auto"/"true" for latest checkpoint under output_dir',
+    )
     args = parser.parse_args()
 
     with open(args.config, encoding="utf-8") as f:
@@ -239,9 +306,18 @@ def main():
     else:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    resume_ckpt = resolve_resume_checkpoint(args.resume, args.output_dir)
+
     num_generations = args.num_generations or int(cfg.get("num_generations", 16))
-    model_dir = args.model_path / "final" if (args.model_path / "final").exists() else args.model_path
-    tok_dir = args.model_path / "tokenizer" if (args.model_path / "tokenizer").exists() else model_dir
+    sft_model_dir = args.model_path / "final" if (args.model_path / "final").exists() else args.model_path
+    model_dir = resume_ckpt if resume_ckpt is not None else sft_model_dir
+    if resume_ckpt is not None and (resume_ckpt / "tokenizer_config.json").exists():
+        tok_dir = resume_ckpt
+    elif (args.model_path / "tokenizer").exists():
+        tok_dir = args.model_path / "tokenizer"
+    else:
+        tok_dir = sft_model_dir
     prompt_cutoff = int(cfg.get("prompt_cutoff", 384))
     ref_device_name = str(cfg.get("ref_device", "cuda_pingpong"))
     ref_storage, ref_pingpong = resolve_ref_mode(ref_device_name)
@@ -252,14 +328,20 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    if local_rank <= 0:
+        print(f"[rl] load_policy_from={model_dir}", flush=True)
+        if resume_ckpt is not None:
+            print(f"[rl] resume_from_checkpoint={resume_ckpt}", flush=True)
+
     model = AutoModelForCausalLM.from_pretrained(
         str(model_dir), trust_remote_code=True, torch_dtype=torch.float16
     ).to(device)
 
-    # ref storage: cpu (incl. pingpong) or cuda (always resident on GPU)
+    # On resume, keep ref aligned with the resumed policy; otherwise start from SFT.
+    ref_init_dir = model_dir if resume_ckpt is not None else sft_model_dir
     ref_home = torch.device("cpu" if ref_storage == "cpu" else device)
     ref_model = AutoModelForCausalLM.from_pretrained(
-        str(model_dir), trust_remote_code=True, torch_dtype=torch.float16
+        str(ref_init_dir), trust_remote_code=True, torch_dtype=torch.float16
     ).to(ref_home)
     if ref_storage == "cuda":
         ref_model.config.use_cache = False
@@ -325,17 +407,66 @@ def main():
     save_steps = int(cfg.get("save_steps", 100))
     metrics_jsonl = args.output_dir / "metrics.jsonl"
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
     step = 0
-    log_history = []
+    log_history: list = []
     pad_id = tokenizer.pad_token_id
     micro_step = 0
+    skip_micros = 0
     t_step = time.time()
+
+    if resume_ckpt is not None:
+        state_path = resume_ckpt / "trainer_state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+        step = int(state.get("step", 0))
+        micro_step = int(state.get("micro_step", step * accum))
+        log_history = list(state.get("log_history") or [])
+        # Prefer exact micros_seen; fall back to step*accum (ignores epoch-end leftovers).
+        skip_micros = int(state.get("micros_seen", step * accum))
+
+        opt_path = resume_ckpt / "optimizer.pt"
+        sch_path = resume_ckpt / "scheduler.pt"
+        if opt_path.exists():
+            optim.load_state_dict(torch.load(opt_path, map_location="cpu"))
+            if local_rank <= 0:
+                print(f"[rl] restored optimizer from {opt_path}", flush=True)
+        elif local_rank <= 0:
+            print("[rl] warning: optimizer.pt missing; continuing with fresh optimizer", flush=True)
+
+        if sch_path.exists():
+            sched.load_state_dict(torch.load(sch_path, map_location="cpu"))
+            if local_rank <= 0:
+                print(f"[rl] restored scheduler from {sch_path}", flush=True)
+        else:
+            for _ in range(step):
+                sched.step()
+            if local_rank <= 0:
+                print(f"[rl] warning: scheduler.pt missing; fast-forwarded {step} steps", flush=True)
+
+        rng_path = resume_ckpt / "rng_state.pt"
+        if rng_path.exists():
+            try:
+                rng = torch.load(rng_path, map_location="cpu")
+                if rng.get("torch") is not None:
+                    torch.set_rng_state(rng["torch"])
+                if rng.get("cuda") is not None and torch.cuda.is_available():
+                    torch.cuda.set_rng_state_all(rng["cuda"])
+            except Exception as exc:  # noqa: BLE001
+                if local_rank <= 0:
+                    print(f"[rl] warning: failed to restore rng_state ({exc})", flush=True)
+
+        if local_rank <= 0:
+            rewrite_metrics_jsonl(metrics_jsonl, log_history)
+            print(
+                f"[rl] resume ready step={step}/{total_steps} skip_micros={skip_micros} "
+                f"log_history={len(log_history)}",
+                flush=True,
+            )
 
     if local_rank <= 0:
         print(
             f"[rl] train start steps/epoch≈{steps_per_epoch} total_opt_steps≈{total_steps} "
-            f"accum={accum} logging_steps={logging_steps} save_steps={save_steps}",
+            f"accum={accum} logging_steps={logging_steps} save_steps={save_steps} "
+            f"start_step={step}",
             flush=True,
         )
 
@@ -346,12 +477,19 @@ def main():
     run_lp = 0.0
     run_n = 0
     run_micro_batches = 0
+    micros_seen = 0
+    n_loader = max(1, len(loader))
+    start_epoch = min(epochs, skip_micros // n_loader)
+    start_batch = skip_micros % n_loader if start_epoch < epochs else 0
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         if sampler is not None:
             sampler.set_epoch(epoch)
         optim.zero_grad(set_to_none=True)
         for batch_idx, (enc, answers, prompts) in enumerate(tqdm(loader, disable=local_rank > 0)):
+            if epoch == start_epoch and batch_idx < start_batch:
+                continue
+            micros_seen = epoch * n_loader + batch_idx + 1
             micro_step += 1
             # Generation: enable KV cache, no grad
             raw_model.eval()
@@ -516,12 +654,15 @@ def main():
                         epoch,
                         raw_model,
                         tokenizer,
+                        optim,
                         sched,
                         log_history,
                         cfg,
                         num_generations=num_generations,
                         world_size=world_size,
                         accum=accum,
+                        micro_step=micro_step,
+                        micros_seen=micros_seen,
                         ref_device_name=ref_device_name,
                         ref_home=ref_home,
                         ref_pingpong=ref_pingpong,
@@ -542,19 +683,21 @@ def main():
                 epochs - 1,
                 raw_model,
                 tokenizer,
+                optim,
                 sched,
                 log_history,
                 cfg,
                 num_generations=num_generations,
                 world_size=world_size,
                 accum=accum,
+                micro_step=micro_step,
+                micros_seen=micros_seen,
                 ref_device_name=ref_device_name,
                 ref_home=ref_home,
                 ref_pingpong=ref_pingpong,
                 optim_name=optim_name,
             )
-        out_final = args.output_dir / "final"
-        out_final.mkdir(parents=True, exist_ok=True)
+        out_final = prepare_save_dir(args.output_dir / "final")
         raw_model.save_pretrained(out_final)
         save_tok(tokenizer, out_final)
         with open(args.output_dir / "train_metrics.json", "w", encoding="utf-8") as f:
@@ -568,6 +711,7 @@ def main():
                     "ref_mode": ref_device_name,
                     "ref_home": str(ref_home),
                     "ref_pingpong": ref_pingpong,
+                    "resumed_from": str(resume_ckpt) if resume_ckpt is not None else None,
                 },
                 f,
                 indent=2,

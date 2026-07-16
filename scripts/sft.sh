@@ -5,9 +5,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT}"
 export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
 export NCCL_IB_DISABLE=1
-# Avoid NCCL P2P hangs on some multi-V100 topologies (busy-wait 100% util, ~50W).
+# Avoid NCCL hangs on some multi-V100 topologies (busy-wait 100% util, ~50W).
 export NCCL_P2P_DISABLE="${NCCL_P2P_DISABLE:-1}"
+# Keep SHM on for single-node speed; disable only P2P (V100 topology hang).
 export NCCL_SHM_DISABLE="${NCCL_SHM_DISABLE:-0}"
+export NCCL_NET="${NCCL_NET:-Socket}"
+# Bind to real NIC; Tailscale/docker ifaces can stall NCCL collectives.
+export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-enp193s0}"
+export GLOO_SOCKET_IFNAME="${GLOO_SOCKET_IFNAME:-enp193s0}"
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export PYTHONUNBUFFERED=1
 # Keep HF/transformers quiet (config dumps are extremely noisy under torchrun).
@@ -22,7 +27,7 @@ SIZE="${2:?size}"
 RESUME="${3:-${RESUME:-}}"
 NPROC="${NPROC:-4}"
 
-echo "[sft.sh] ds=${DS} size=${SIZE} nproc=${NPROC} resume=${RESUME:-none} NCCL_P2P_DISABLE=${NCCL_P2P_DISABLE}"
+echo "[sft.sh] ds=${DS} size=${SIZE} nproc=${NPROC} resume=${RESUME:-none} NCCL_P2P_DISABLE=${NCCL_P2P_DISABLE} NCCL_SHM_DISABLE=${NCCL_SHM_DISABLE} NCCL_NET=${NCCL_NET} NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME}"
 
 EXTRA=()
 if [[ -n "${RESUME}" ]]; then

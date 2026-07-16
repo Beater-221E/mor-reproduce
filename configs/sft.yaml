@@ -8,7 +8,8 @@ max_grad_norm: 1.0
 cutoff_len: 512
 global_batch_size: 1024
 eval_every_epochs: 0.5
-early_stop_patience: 3
+# HF patience counts eval rounds; with eval_every_epochs=0.5, 2 ≈ 1 epoch (paper).
+early_stop_patience: 2
 fp16: true
 gradient_checkpointing: true
 
@@ -20,16 +21,17 @@ micro_batch_size:
   "3B": 1
 
 # throughput
-dataloader_num_workers: 2
+dataloader_num_workers: 0  # avoid fork+CUDA hangs on this host
 token_cache: true
 pack_sequences: true   # ~3x fewer steps/epoch (mean seq ~134 -> pack into 512)
 log_every_micro: 0     # 0 = off (avoid 4-rank spam)
 logging_steps: 1     # print loss every optimizer step (step is already ~2min)
 
 # Paths are relative to project root (or absolute if you prefer).
+# Paper backbone: Qwen2.5-Instruct (1.5B Instruct for this run).
 model_map:
   "0.5B": data/models/Qwen2.5-0.5B
-  "1.5B": data/models/Qwen2.5-1.5B
+  "1.5B": data/models/Qwen2.5-1.5B-Instruct
   "3B": data/models/Qwen2.5-3B
 
 # local model root under the project tree
