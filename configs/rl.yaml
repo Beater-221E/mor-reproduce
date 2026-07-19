@@ -25,3 +25,8 @@ max_new_tokens_cap: 8
 logging_steps: 1
 save_steps: 100
 save_total_limit: 3
+# numerical stability (fp16 / larger micro-batch)
+adv_clip: 5.0          # clamp group-relative advantages
+kl_clip: 20.0          # clamp per-sample KL term
+logits_clamp: 80.0     # clamp logits before logsumexp
+skip_nonfinite: true   # skip bad terms / drop bad accum windows

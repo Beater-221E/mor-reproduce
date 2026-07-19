@@ -88,15 +88,25 @@ def generate_group(model, tokenizer, enc, processor, num_generations, max_new_to
     return outs
 
 
-def completion_logprobs(model, input_ids, attention_mask, prompt_len, pad_token_id=None):
-    """Mean completion token logprob without materializing full-vocab log_softmax."""
+def completion_logprobs(
+    model,
+    input_ids,
+    attention_mask,
+    prompt_len,
+    pad_token_id=None,
+    *,
+    logits_clamp: float = 80.0,
+):
+    """Mean completion token logprob in fp32 (avoids fp16 Inf/NaN in logsumexp)."""
     outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
-    logits = outputs.logits[:, :-1]
+    logits = outputs.logits[:, :-1].float()
     labels = input_ids[:, 1:]
+    if logits_clamp and logits_clamp > 0:
+        logits = logits.clamp(min=-logits_clamp, max=logits_clamp)
     # gather - logsumexp avoids an extra [B,S,V] softmax buffer
     selected = logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
-    lse = torch.logsumexp(logits.float(), dim=-1)
-    token_lp = selected.float() - lse
+    lse = torch.logsumexp(logits, dim=-1)
+    token_lp = selected - lse
 
     seq_len = labels.size(1)
     idx = torch.arange(seq_len, device=labels.device)
@@ -105,7 +115,24 @@ def completion_logprobs(model, input_ids, attention_mask, prompt_len, pad_token_
         mask = mask & (labels != pad_token_id)
     token_lp = token_lp * mask
     lengths = mask.sum(dim=1).clamp(min=1)
-    return (token_lp.sum(dim=1) / lengths).to(dtype=logits.dtype)
+    # Keep fp32 for GRPO loss; casting back to fp16 reintroduces overflow risk.
+    return token_lp.sum(dim=1) / lengths
+
+
+def group_advantages(rewards: torch.Tensor, *, adv_clip: float = 5.0) -> torch.Tensor:
+    """Stable group-relative advantages with std floor + optional clip."""
+    centered = rewards - rewards.mean()
+    std = rewards.std(unbiased=False).clamp_min(1e-4)
+    adv = centered / std
+    if adv_clip and adv_clip > 0:
+        adv = adv.clamp(min=-adv_clip, max=adv_clip)
+    return adv
+
+
+def finite_or_none(x: torch.Tensor) -> torch.Tensor | None:
+    if not torch.isfinite(x).all():
+        return None
+    return x
 
 
 def resolve_ref_mode(ref_device_name: str) -> tuple[str, bool]:
@@ -133,12 +160,18 @@ def ref_completion_logprobs(
     attention_mask,
     prompt_len: int,
     pad_token_id=None,
+    logits_clamp: float = 80.0,
 ):
     """Reference logprob; optionally stage ref weights on GPU only for this forward."""
     if pingpong:
         ref_model.to(device, non_blocking=True)
     lp = completion_logprobs(
-        ref_model, input_ids, attention_mask, prompt_len, pad_token_id=pad_token_id
+        ref_model,
+        input_ids,
+        attention_mask,
+        prompt_len,
+        pad_token_id=pad_token_id,
+        logits_clamp=logits_clamp,
     )
     if pingpong:
         ref_model.to("cpu", non_blocking=True)
@@ -405,7 +438,19 @@ def main():
     max_grad_norm = float(cfg.get("max_grad_norm", 0.3))
     logging_steps = int(cfg.get("logging_steps", 1))
     save_steps = int(cfg.get("save_steps", 100))
+    # Numerical stability knobs (fp16 + larger micro-batch).
+    adv_clip = float(cfg.get("adv_clip", 5.0))
+    kl_clip = float(cfg.get("kl_clip", 20.0))
+    logits_clamp = float(cfg.get("logits_clamp", 80.0))
+    skip_nonfinite = bool(cfg.get("skip_nonfinite", True))
     metrics_jsonl = args.output_dir / "metrics.jsonl"
+    skipped_nonfinite = 0
+    if local_rank <= 0:
+        print(
+            f"[rl] numerics adv_clip={adv_clip} kl_clip={kl_clip} "
+            f"logits_clamp={logits_clamp} skip_nonfinite={skip_nonfinite}",
+            flush=True,
+        )
 
     step = 0
     log_history: list = []
@@ -528,7 +573,7 @@ def main():
                     device=device,
                     dtype=torch.float32,
                 )
-                adv = (rewards - rewards.mean()) / (rewards.std(unbiased=False) + 1e-6)
+                adv = group_advantages(rewards, adv_clip=adv_clip)
                 batch_reward_value += float(rewards.mean().item())
 
                 # Micro-backward: one completion graph at a time
@@ -550,6 +595,7 @@ def main():
                                 attention_mask=attn,
                                 prompt_len=plen,
                                 pad_token_id=pad_id,
+                                logits_clamp=logits_clamp,
                             )
                         else:
                             lp_ref = ref_completion_logprobs(
@@ -560,11 +606,43 @@ def main():
                                 attention_mask=attn.cpu(),
                                 prompt_len=plen,
                                 pad_token_id=pad_id,
+                                logits_clamp=logits_clamp,
                             )
 
-                    lp = completion_logprobs(raw_model, seq, attn, plen, pad_token_id=pad_id)
-                    kl = lp.float() - lp_ref.float()
-                    loss = (-(adv[g] * lp.float()) + beta * kl) / (accum * n_terms)
+                    lp = completion_logprobs(
+                        raw_model,
+                        seq,
+                        attn,
+                        plen,
+                        pad_token_id=pad_id,
+                        logits_clamp=logits_clamp,
+                    )
+                    # Force fp32 math for GRPO terms.
+                    lp = lp.float()
+                    lp_ref = lp_ref.float()
+                    if skip_nonfinite and (finite_or_none(lp) is None or finite_or_none(lp_ref) is None):
+                        skipped_nonfinite += 1
+                        if local_rank <= 0 and skipped_nonfinite <= 5:
+                            print(
+                                f"[rl] skip nonfinite logprob at step={step} micro={micro_step} "
+                                f"(skipped={skipped_nonfinite})",
+                                flush=True,
+                            )
+                        del lp, lp_ref, seq, attn
+                        continue
+
+                    kl = (lp - lp_ref).clamp(min=-kl_clip, max=kl_clip) if kl_clip > 0 else (lp - lp_ref)
+                    loss = (-(adv[g] * lp) + beta * kl) / (accum * n_terms)
+                    if skip_nonfinite and finite_or_none(loss) is None:
+                        skipped_nonfinite += 1
+                        if local_rank <= 0 and skipped_nonfinite <= 5:
+                            print(
+                                f"[rl] skip nonfinite loss at step={step} micro={micro_step} "
+                                f"(skipped={skipped_nonfinite})",
+                                flush=True,
+                            )
+                        del lp, lp_ref, kl, loss, seq, attn
+                        continue
 
                     last_term = term_i == n_terms
                     sync_ctx = (
@@ -594,6 +672,25 @@ def main():
                     grad_norm = float(grad_norm.item())
                 else:
                     grad_norm = float(grad_norm)
+                # Drop this accum window if grads exploded; do not advance LR/step.
+                if skip_nonfinite and (not math.isfinite(grad_norm) or grad_norm > 1e4):
+                    skipped_nonfinite += 1
+                    if local_rank <= 0:
+                        print(
+                            f"[rl] drop accum grads at micro={micro_step} "
+                            f"grad_norm={grad_norm} (skipped={skipped_nonfinite})",
+                            flush=True,
+                        )
+                    optim.zero_grad(set_to_none=True)
+                    t_step = time.time()
+                    run_loss = 0.0
+                    run_reward = 0.0
+                    run_kl = 0.0
+                    run_lp = 0.0
+                    run_n = 0
+                    run_micro_batches = 0
+                    continue
+
                 optim.step()
                 lr = float(optim.param_groups[0]["lr"])
                 sched.step()
@@ -622,22 +719,37 @@ def main():
                         "learning_rate": lr,
                         "sec_per_step": sec,
                         "accum": accum,
+                        "skipped_nonfinite": skipped_nonfinite,
                     }
                     log_history.append(entry)
                     append_metrics_jsonl(metrics_jsonl, entry)
+
+                    def _fmt(v):
+                        if isinstance(v, float):
+                            return "nan" if not math.isfinite(v) else f"{v:.6g}"
+                        return str(v)
+
                     print(
                         f"[rl] step={step}/{total_steps} micro={micro_step} "
                         f"epoch={epoch_f:.4f} {sec:.1f}s/step eta≈{eta_h:.1f}h "
-                        f"loss={entry['loss']:.4f} reward_mean={entry['reward_mean']:.4f} "
-                        f"kl_mean={entry['kl_mean']:.4f} lp_mean={entry['lp_mean']:.4f} "
-                        f"grad_norm={grad_norm:.4f} learning_rate={lr:.6g}",
+                        f"loss={_fmt(entry['loss'])} reward_mean={_fmt(entry['reward_mean'])} "
+                        f"kl_mean={_fmt(entry['kl_mean'])} lp_mean={_fmt(entry['lp_mean'])} "
+                        f"grad_norm={_fmt(grad_norm)} learning_rate={lr:.6g}",
                         flush=True,
                     )
                     print(
                         f"[rl] metrics step={step} epoch={epoch_f:.4f} "
-                        + " ".join(f"{k}={entry[k]:.6g}" if isinstance(entry[k], float) else f"{k}={entry[k]}" for k in (
-                            "loss", "reward_mean", "kl_mean", "lp_mean", "grad_norm", "learning_rate"
-                        )),
+                        + " ".join(
+                            f"{k}={_fmt(entry[k])}"
+                            for k in (
+                                "loss",
+                                "reward_mean",
+                                "kl_mean",
+                                "lp_mean",
+                                "grad_norm",
+                                "learning_rate",
+                            )
+                        ),
                         flush=True,
                     )
                     run_loss = 0.0

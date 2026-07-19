@@ -324,7 +324,11 @@ def main():
         log_every_micro=log_every,
     )
     trainer.add_callback(MetricsLogCallback())
-    trainer.add_callback(EarlyStoppingCallback(early_stopping_patience=int(cfg.get("early_stop_patience", 3))))
+    early_stop_patience = int(cfg.get("early_stop_patience", 3))
+    if early_stop_patience > 0:
+        trainer.add_callback(EarlyStoppingCallback(early_stopping_patience=early_stop_patience))
+    elif is_main:
+        print("[sft] early stopping disabled; will run full max_epochs", flush=True)
 
     resume_ckpt = None
     if args.resume:

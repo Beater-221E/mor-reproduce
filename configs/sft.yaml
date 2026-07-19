@@ -8,8 +8,8 @@ max_grad_norm: 1.0
 cutoff_len: 512
 global_batch_size: 1024
 eval_every_epochs: 0.5
-# HF patience counts eval rounds; with eval_every_epochs=0.5, 2 ≈ 1 epoch (paper).
-early_stop_patience: 2
+# 0 = disable early stopping (run full max_epochs).
+early_stop_patience: 0
 fp16: true
 gradient_checkpointing: true
 

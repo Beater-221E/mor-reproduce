@@ -24,6 +24,11 @@ EVAL_RE = re.compile(
     r"\[sft\] eval step=(?P<step>\d+) eval_loss=(?P<eval_loss>[-+0-9.eE]+)"
     r"(?: .*?epoch=(?P<epoch>[0-9.]+))?"
 )
+# HF also dumps eval under "[sft] metrics step=... eval_loss=..."
+EVAL_METRICS_RE = re.compile(
+    r"\[sft\] metrics step=(?P<step>\d+) epoch=(?P<epoch>[0-9.]+) "
+    r"eval_loss=(?P<eval_loss>[-+0-9.eE]+)"
+)
 STEP_RE = re.compile(
     r"\[sft\] step=(?P<step>\d+)/(?P<max_steps>\d+) epoch=(?P<epoch>[0-9.]+) "
     r"(?P<sec_per_step>[0-9.]+)s/step eta≈(?P<eta_h>[0-9.]+)h"
@@ -46,20 +51,9 @@ def load_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def load_trainer_state(run_dir: Path) -> list[dict]:
-    ckpts = sorted(
-        (p for p in run_dir.glob("checkpoint-*") if p.is_dir() and p.name.split("-")[-1].isdigit()),
-        key=lambda p: int(p.name.split("-")[-1]),
-    )
-    if not ckpts:
-        return []
-    state_path = ckpts[-1] / "trainer_state.json"
-    if not state_path.exists():
-        return []
-    with open(state_path, encoding="utf-8") as f:
-        state = json.load(f)
+def _rows_from_log_history(log_history: list) -> list[dict]:
     rows = []
-    for item in state.get("log_history", []):
+    for item in log_history:
         if "step" not in item:
             continue
         row = {
@@ -72,6 +66,27 @@ def load_trainer_state(run_dir: Path) -> list[dict]:
                 row[k] = float(item[k])
         rows.append(row)
     return rows
+
+
+def load_trainer_state(run_dir: Path) -> list[dict]:
+    # Prefer root trainer_state.json (written at end), then newest checkpoint.
+    candidates = [run_dir / "trainer_state.json"]
+    ckpts = sorted(
+        (p for p in run_dir.glob("checkpoint-*") if p.is_dir() and p.name.split("-")[-1].isdigit()),
+        key=lambda p: int(p.name.split("-")[-1]),
+    )
+    if ckpts:
+        candidates.append(ckpts[-1] / "trainer_state.json")
+    for state_path in candidates:
+        if not state_path.exists():
+            continue
+        with open(state_path, encoding="utf-8") as f:
+            state = json.load(f)
+        # root file may be raw log_history list; checkpoint file is a dict
+        if isinstance(state, list):
+            return _rows_from_log_history(state)
+        return _rows_from_log_history(state.get("log_history", []))
+    return []
 
 
 def load_log(path: Path) -> tuple[list[dict], list[dict]]:
@@ -94,14 +109,14 @@ def load_log(path: Path) -> tuple[list[dict], list[dict]]:
                     }
                 )
                 continue
-            m = EVAL_RE.search(line)
+            m = EVAL_RE.search(line) or EVAL_METRICS_RE.search(line)
             if m:
                 row = {
                     "step": int(m.group("step")),
                     "eval_loss": float(m.group("eval_loss")),
                     "source": "log",
                 }
-                if m.group("epoch"):
+                if m.groupdict().get("epoch"):
                     row["epoch"] = float(m.group("epoch"))
                 eval_rows.append(row)
                 continue
