@@ -1,0 +1,11 @@
+model_name_or_path: data/models/Qwen2.5-0.5B-Instruct
+diagnostic_model_name_or_path: data/models/Qwen2.5-0.5B
+model_variant: qwen2.5-0.5b-base-diagnostic
+full_finetuning: true
+freeze_llm: false
+use_lora: false
+add_all_codebook_tokens: false
+precision:
+  preferred: bf16
+  fallback_for_v100: fp32
+gradient_checkpointing: true

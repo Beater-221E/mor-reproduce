@@ -11,7 +11,7 @@ import torch
 from transformers import AutoModelForCausalLM
 
 from minionerec.model import load_tokenizer_from_dir, save_tok
-from minionerec.util import prepare_save_dir
+from minionerec.runtime.paths import prepare_save_dir
 
 
 def main() -> None:

@@ -1,0 +1,33 @@
+# Paper-aligned RL (true old-policy ratio + clip). Hyperparams from official when paper silent.
+implementation_target: paper_aligned
+
+dataset: Industrial_and_Scientific
+processed_data_root: data/processed
+official_format_root: data/official_format
+
+model_name_or_path: checkpoints/sft_0.5b_overfit_fp32/best_checkpoint
+
+num_generations: 4           # smoke; formal paper G=16 requires more memory
+beam_search: true            # paper: constrained beam
+smoke_g4: true
+updates_per_rollout: 1       # this_experiment: one policy update then refresh old
+clip_eps: 0.2                # paper PPO-style clip; value not reported in paper -> this_experiment/common GRPO default
+# beta not reported in paper -> official_script
+beta: 1.0e-3
+learning_rate: 1.0e-5        # official_script / paper 1e-5
+num_train_epochs: 1
+max_steps: 5
+temperature: 1.0
+reward_type: ranking
+dapo: false
+gspo: false
+
+train_batch_size: 1
+gradient_accumulation_steps: 2
+max_train_samples: 64
+rl_seq_title_sample: 32
+max_completion_length: 32
+max_prompt_length: 512
+
+seed: 42
+output_dir: checkpoints/rl_0.5b_paper_smoke_Industrial

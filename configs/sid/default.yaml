@@ -1,0 +1,25 @@
+# SID construction defaults
+dataset: Industrial_and_Scientific
+processed_root: data/processed
+# residual_kmeans: layered KMeans + optional last-code uniquify.
+# rqvae: neural RQ-VAE (higher collision on Amazon23 Industrial).
+method: residual_kmeans
+pca_dim: 256
+# Keep (c0,c1) semantics; reassign c2 inside each prefix → collision≈0 when max group ≤K.
+enforce_unique: true
+epochs: 4000
+batch_size: 2048
+lr: 3.0e-4
+latent_dim: 64
+hidden_dim: 256
+beta: 0.25
+device: cuda:0
+log_every: 50
+early_collision_patience: 40
+dead_code_every: 100
+warm_start_size: 8192
+
+# embeddings (build-embeddings)
+embed_model: data/models/Qwen3-Embedding-4B
+embed_batch_size: 4
+embed_max_length: 1024

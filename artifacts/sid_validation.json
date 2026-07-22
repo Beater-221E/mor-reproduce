@@ -1,0 +1,24 @@
+{
+  "dataset": "Industrial_and_Scientific",
+  "sid_map": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific/sid/sid_map.json",
+  "used_sid_token_count": 720,
+  "layer_inventory": {
+    "tokens_per_layer": [
+      256,
+      256,
+      208
+    ],
+    "sid_length_distribution": {
+      "3": 12188
+    },
+    "expected_layers": 3,
+    "all_possible_sid_tokens": 768
+  },
+  "unknown_sid_token": 0,
+  "tokenizer_roundtrip_failure": 0,
+  "roundtrip_failures": [],
+  "original_vocab_size": 152385,
+  "new_vocab_size": 152385,
+  "unknown_token_examples": [],
+  "hard_fail": false
+}

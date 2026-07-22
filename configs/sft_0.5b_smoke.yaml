@@ -1,0 +1,55 @@
+# Stage B overfitting / Stage C minimal — inherits official_source SFT
+implementation_target: official_source
+
+dataset: Industrial_and_Scientific
+processed_data_root: data/processed
+official_format_root: data/official_format
+
+model_name_or_path: data/models/Qwen2.5-0.5B-Instruct
+diagnostic_model_name_or_path: data/models/Qwen2.5-0.5B
+# Auto: if Instruct weights missing, set this to run Base diagnostic
+model_variant: qwen2.5-0.5b-base-diagnostic
+
+full_finetuning: true
+freeze_llm: false
+use_lora: false
+add_all_codebook_tokens: false
+
+cutoff_len: 512
+learning_rate: 3.0e-4
+lr_scheduler_type: cosine
+optimizer: adamw_torch
+warmup_steps: 5
+weight_decay: 0.0
+
+batch_size: 64          # smaller global batch for smoke
+micro_batch_size: 2
+auto_adapt_batch: false
+
+max_train_samples: 256
+max_eval_samples: 64
+num_train_epochs: 20
+max_steps: null
+
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+early_stopping: false
+early_stopping_patience:
+  official_source: 3
+  paper_aligned: 1
+
+seed: 42
+data_seed: 42
+eval_steps: 0.25
+logging_steps: 5
+gradient_checkpointing: true
+
+precision:
+  preferred: bf16
+  # V100 cannot bf16; fp16 is unstable with newly added SID embeddings (overfit fails).
+  # Use fp32 on V100 for correctness of minimal validation.
+  fallback_for_v100: fp32
+
+output_dir: checkpoints/sft_0.5b_smoke_Industrial
+artifacts_dir: artifacts

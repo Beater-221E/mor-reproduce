@@ -1,0 +1,11 @@
+extends: base.yaml
+
+smoke_g4: true
+num_generations: 4
+max_steps: 10
+max_train_samples: 128
+max_eval_samples: 64
+rl_seq_title_sample: 64
+gradient_accumulation_steps: 2
+train_batch_size: 1
+output_dir: checkpoints/rl_0.5b_official_smoke_g4_Industrial

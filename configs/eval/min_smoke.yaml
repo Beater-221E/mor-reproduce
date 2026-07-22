@@ -1,0 +1,11 @@
+extends: base.yaml
+
+# Minimal eval smoke — not a formal result run
+model_name_or_path: checkpoints/rl_min_smoke/best_checkpoint
+output_dir: experiments/eval_min_smoke
+num_beams: 5
+max_completion_length: 32
+max_samples: 16
+seed: 42
+split: test
+ks: [3, 5, 10]

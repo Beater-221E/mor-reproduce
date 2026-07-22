@@ -1,0 +1,29 @@
+{
+  "tasks": [
+    {
+      "task_name": "SidSFTDataset",
+      "number_of_examples": 64,
+      "fraction_of_total": 0.3333333333333333,
+      "average_prompt_tokens": 98.046875,
+      "average_response_tokens": 5.0,
+      "truncation_rate": 0.0
+    },
+    {
+      "task_name": "SidItemFeatDataset",
+      "number_of_examples": 64,
+      "fraction_of_total": 0.3333333333333333,
+      "average_prompt_tokens": 74.296875,
+      "average_response_tokens": 26.9375,
+      "truncation_rate": 0.0
+    },
+    {
+      "task_name": "FusionSeqRecDataset",
+      "number_of_examples": 64,
+      "fraction_of_total": 0.3333333333333333,
+      "average_prompt_tokens": 102.046875,
+      "average_response_tokens": 48.8125,
+      "truncation_rate": 0.0
+    }
+  ],
+  "total_examples": 192
+}

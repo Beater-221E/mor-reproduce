@@ -1,0 +1,26 @@
+extends: ../data/amazon23-industrial.yaml
+
+implementation_target: official_source
+num_generations: 16
+beam_search: true
+dynamic_sampling: false
+dapo: false
+gspo: false
+reward_type: ranking
+constrained_decoding: true
+test_during_training: false
+learning_rate: 1.0e-5
+beta: 1.0e-3
+num_train_epochs: 1
+temperature: 1.0
+train_batch_size: 1
+gradient_accumulation_steps: 8
+max_completion_length: 32
+max_prompt_length: 512
+max_grad_norm: 0.3
+seed: 42
+logging_steps: 1
+fail_on_invalid: true
+strict_invalid_abort: false
+output_dir: checkpoints/rl_0.5b_official_Industrial
+model_name_or_path: checkpoints/sft_0.5b_overfit_fp32/best_checkpoint

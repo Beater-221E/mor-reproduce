@@ -1,0 +1,4 @@
+extends: base.yaml
+implementation_target: paper_aligned
+clip_eps: 0.2
+output_dir: checkpoints/rl_0.5b_paper_Industrial

@@ -1,0 +1,42 @@
+# Official-source RL (rl.sh @ 0c64b955)
+implementation_target: official_source
+
+dataset: Industrial_and_Scientific
+processed_data_root: data/processed
+official_format_root: data/official_format
+
+model_name_or_path: checkpoints/sft_0.5b_official_Industrial/best_checkpoint
+
+num_generations: 16          # official_script rl.sh
+beam_search: true            # official_script
+dynamic_sampling: false      # official_script
+dapo: false                  # official_script
+gspo: false                  # official default
+sync_ref_model: true         # official_script (handled by frozen ref copy)
+test_during_training: false  # official_script
+add_gt: false                # official_script
+mask_all_zero: false
+
+reward_type: ranking         # official_script
+constrained_decoding: true
+
+learning_rate: 1.0e-5        # official_script
+beta: 1.0e-3                 # official_script
+num_train_epochs: 2          # official_script
+temperature: 1.0             # official_script
+
+# Official: train_batch_size 64 * 8 GPU * accum 2 = 1024 prompt-slots / step
+# On 4xV100 we keep effective prompt throughput via accum; do NOT reduce G.
+train_batch_size: 1          # this_experiment per-device unique prompts
+gradient_accumulation_steps: 16
+eval_batch_size: 2
+max_completion_length: 128
+max_prompt_length: 512
+max_grad_norm: 0.3
+
+seed: 42
+logging_steps: 1
+fail_on_invalid: true
+strict_invalid_abort: false
+
+output_dir: checkpoints/rl_0.5b_official_Industrial

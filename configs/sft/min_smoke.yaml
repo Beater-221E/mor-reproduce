@@ -1,0 +1,16 @@
+extends: base.yaml
+
+# Minimal pipeline smoke — not a formal result run
+batch_size: 32
+micro_batch_size: 2
+auto_adapt_batch: false
+max_train_samples: 64
+max_eval_samples: 16
+num_train_epochs: 1
+max_steps: 4
+warmup_steps: 0
+eval_steps: 2
+logging_steps: 1
+early_stopping: false
+load_best_model_at_end: false
+output_dir: checkpoints/sft_min_smoke

@@ -1,0 +1,3 @@
+extends: base.yaml
+# Alias used in README; same as configs/eval/base.yaml
+output_dir: experiments/eval

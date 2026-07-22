@@ -1,0 +1,3 @@
+extends: base.yaml
+implementation_target: official_source
+output_dir: checkpoints/rl_0.5b_official_Industrial

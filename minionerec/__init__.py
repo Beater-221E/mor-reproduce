@@ -1,2 +1,2 @@
-"""MiniOneRec (simplified)."""
-__version__ = "0.2.0"
+"""MiniOneRec Amazon23 reproduction."""
+__version__ = "0.3.0"

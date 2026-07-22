@@ -1,0 +1,15 @@
+dataset: Industrial_and_Scientific
+processed_data_root: data/processed
+official_format_root: data/official_format
+
+model_name_or_path: checkpoints/sft_0.5b_overfit_fp32/best_checkpoint
+checkpoint_label: sft_overfit_fp32_best
+output_dir: experiments/eval_sft_overfit
+
+num_beams: 20          # reduced from official 50 for 0.5B smoke speed; report as this_experiment
+max_new_tokens: 32
+batch_size: 2
+max_eval_samples: 128
+length_penalty: 0.0
+cutoff_len: 512
+seed: 42

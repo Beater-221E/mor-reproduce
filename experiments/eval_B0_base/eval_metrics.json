@@ -1,0 +1,16 @@
+{
+  "HR@3": 0.0,
+  "HR@5": 0.0,
+  "HR@10": 0.0,
+  "NDCG@3": 0.0,
+  "NDCG@5": 0.0,
+  "NDCG@10": 0.0,
+  "duplicate_rate": 0.0,
+  "num_examples": 64,
+  "invalid_completion_rate": 0.0,
+  "average_generation_length": 4.0,
+  "evaluation_runtime": 4.678412675857544,
+  "num_beams": 10,
+  "model_name_or_path": "/home/sheng/proj/mor-reproduce/checkpoints/base_0.5b_sid_resized",
+  "checkpoint_label": "B0_base_sid_resized"
+}

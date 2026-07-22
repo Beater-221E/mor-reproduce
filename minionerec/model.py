@@ -6,7 +6,7 @@ from pathlib import Path
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from minionerec.util import all_sid_tokens
+from minionerec.sid.codec import all_sid_tokens
 
 
 def load_tokenizer(model_name: str, sid_tokens: list[str] | None = None):

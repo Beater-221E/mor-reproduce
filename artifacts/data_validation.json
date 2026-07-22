@@ -1,0 +1,76 @@
+{
+  "dataset": "Industrial_and_Scientific",
+  "stats_file": {
+    "dataset": "Industrial_and_Scientific",
+    "source": "amazon_reviews_2023",
+    "window": "2018-10..2023-09",
+    "num_items": 12188,
+    "num_users": 19924,
+    "train": 103044,
+    "valid": 21751,
+    "test": 26095
+  },
+  "paths": {
+    "dataset": "Industrial_and_Scientific",
+    "processed_dir": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific",
+    "train_jsonl": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific/train.jsonl",
+    "valid_jsonl": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific/valid.jsonl",
+    "test_jsonl": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific/test.jsonl",
+    "item_meta": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific/item_meta.json",
+    "stats": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific/stats.json",
+    "sid_dir": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific/sid",
+    "sid_map": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific/sid/sid_map.json",
+    "codebooks": "/home/sheng/proj/mor-reproduce/data/processed/Industrial_and_Scientific/sid/codebooks.npz",
+    "pca": null
+  },
+  "item_meta_count": 12188,
+  "sid_map_count": 12188,
+  "title_empty": 0,
+  "description_empty": 563,
+  "item_metadata_missing_for_sid": 0,
+  "missing_sid": 0,
+  "sid_collision": 0,
+  "sid_collision_detail": {
+    "num_items": 12188,
+    "num_unique_sids": 12188,
+    "sid_collision": 0,
+    "collision_examples": {}
+  },
+  "train": {
+    "split": "train",
+    "num_rows": 103044,
+    "num_users": 19924,
+    "avg_history_len": 4.489499631225496,
+    "missing_sid_refs": 0,
+    "repurchase_target_in_history": 2021,
+    "rows_with_time": 103044,
+    "rows_without_time": 0
+  },
+  "valid": {
+    "split": "valid",
+    "num_rows": 21751,
+    "num_users": 19924,
+    "avg_history_len": 5.66488897062204,
+    "missing_sid_refs": 0,
+    "repurchase_target_in_history": 444,
+    "rows_with_time": 21751,
+    "rows_without_time": 0
+  },
+  "test": {
+    "split": "test",
+    "num_rows": 26095,
+    "num_users": 19924,
+    "avg_history_len": 7.054799770070895,
+    "missing_sid_refs": 0,
+    "repurchase_target_in_history": 471,
+    "rows_with_time": 26095,
+    "rows_without_time": 0
+  },
+  "train_test_user_overlap": 19924,
+  "train_test_leakage": 0,
+  "repurchase_target_in_history_total": 2936,
+  "allow_sid_collision": false,
+  "hard_fail": false,
+  "hard_fail_reasons": [],
+  "note": "repurchase_target_in_history is NOT counted as train_test_leakage"
+}

@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 *.egg-info/
 .eggs/
 dist/
@@ -9,9 +10,9 @@ build/
 .venv/
 venv/
 
-# data & weights — never upload
-data/
-checkpoints/
+# data & weights — never upload (repo-root only; keep minionerec/data/)
+/data/
+/checkpoints/
 *.pt
 *.npy
 *.safetensors

@@ -1,0 +1,60 @@
+# Official-source SFT for Qwen2.5-0.5B on Amazon23 Industrial
+# Parameters annotated with source: paper / official_script / official_default / this_experiment
+
+implementation_target: official_source  # official_source | paper_aligned
+
+dataset: Industrial_and_Scientific
+processed_data_root: data/processed
+official_format_root: data/official_format
+force_export_official_format: false
+allow_sid_collision: false
+
+# Prefer Instruct; if weights missing, set model_variant diagnostic and use Base path.
+model_name_or_path: data/models/Qwen2.5-0.5B-Instruct
+diagnostic_model_name_or_path: data/models/Qwen2.5-0.5B
+model_variant: default  # or qwen2.5-0.5b-base-diagnostic
+
+full_finetuning: true
+freeze_llm: false
+train_sid_embeddings_only: false
+use_lora: false
+add_all_codebook_tokens: false  # official adds only used SID tokens
+
+cutoff_len: 512  # official sft.py default
+learning_rate: 3.0e-4  # paper + official sft.py default
+lr_scheduler_type: cosine  # paper
+optimizer: adamw_torch  # official TrainingArguments
+warmup_steps: 20  # official sft.py
+weight_decay: 0.0  # official default (unset)
+
+# Official sft.sh: --batch_size 1024 --micro_batch_size 16 on 8 GPUs
+# batch_size here is GLOBAL batch (official meaning).
+batch_size: 1024  # official_script
+micro_batch_size: 8  # this_experiment hardware adapt (V100); accum keeps global 1024
+auto_adapt_batch: true
+
+num_train_epochs: 10  # paper + official
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+early_stopping: true
+early_stopping_patience:
+  official_source: 3  # official sft.py EarlyStoppingCallback
+  paper_aligned: 1    # paper
+
+seed: 42
+data_seed: 42
+eval_steps: 0.05  # official sft.py
+logging_steps: 10
+gradient_checkpointing: true
+save_total_limit: 2
+
+precision:
+  preferred: bf16
+  fallback_for_v100: fp32
+
+output_dir: checkpoints/sft_0.5b_official_Industrial
+artifacts_dir: artifacts
+
+train_fraction: 1.0
+eval_fraction: 1.0

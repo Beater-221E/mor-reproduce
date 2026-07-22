@@ -1,0 +1,13 @@
+extends: base.yaml
+
+batch_size: 64
+micro_batch_size: 2
+auto_adapt_batch: false
+max_train_samples: 256
+max_eval_samples: 64
+num_train_epochs: 20
+warmup_steps: 5
+eval_steps: 0.25
+logging_steps: 5
+early_stopping: false
+output_dir: checkpoints/sft_0.5b_smoke_Industrial

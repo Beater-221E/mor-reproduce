@@ -1,0 +1,13 @@
+{
+  "mor_reproduce_commit": "d4fa8c470ba943ae4f0eabfb0ecc70ddcd3839ea",
+  "minionerec_official_commit": "0c64b955ecb8e3d7a9ae9f1fa88cf938f129b0ed",
+  "minionerec_official_root": "/home/sheng/proj/MiniOneRec-official",
+  "pytorch_version": "2.7.1+cu118",
+  "transformers_version": "5.13.1",
+  "trl_version": "1.8.0",
+  "accelerate_version": "1.14.0",
+  "cuda_version": "11.8",
+  "gpu_model": "Tesla V100-SXM2-16GB",
+  "gpu_count": 4,
+  "python": "/home/sheng/.conda/envs/mor/bin/python"
+}

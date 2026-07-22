@@ -1,0 +1,15 @@
+extends: base.yaml
+
+# Minimal RL smoke — not a formal result run
+smoke_g4: true
+num_generations: 4
+beam_search: true
+max_steps: 2
+max_train_samples: 32
+max_eval_samples: 16
+rl_seq_title_sample: 16
+gradient_accumulation_steps: 1
+train_batch_size: 1
+logging_steps: 1
+model_name_or_path: checkpoints/sft_min_smoke/best_checkpoint
+output_dir: checkpoints/rl_min_smoke
