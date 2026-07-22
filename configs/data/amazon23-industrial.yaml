@@ -1,0 +1,5 @@
+# Shared Amazon23 Industrial defaults
+dataset: Industrial_and_Scientific
+processed_data_root: data/processed
+official_format_root: data/official_format
+category_prompt: industrial and scientific items
